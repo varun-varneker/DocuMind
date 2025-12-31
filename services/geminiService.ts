@@ -60,7 +60,12 @@ export const getGroundedResponseStream = async function* (
     for await (const chunk of stream) {
       const text = chunk.text;
       if (text) {
-        yield text;
+        // Stream character by character for smoother typing effect
+        for (const char of text) {
+          yield char;
+          // Small delay for smooth animation (optional, can be removed for max speed)
+          await new Promise(resolve => setTimeout(resolve, 10));
+        }
       }
     }
   } catch (error) {
