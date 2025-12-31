@@ -1,0 +1,5 @@
+{
+  "name": "DocuMind RAG Architect",
+  "description": "A sophisticated closed-loop RAG system for grounded document QA with verifiable source tracing and hallucination guardrails.",
+  "requestFramePermissions": []
+}
