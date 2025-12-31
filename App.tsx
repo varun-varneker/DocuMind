@@ -69,15 +69,19 @@ I've indexed about **${extractedChunks.length} specific nodes** across the docum
         .filter(m => m.id !== 'system-1')
         .map(m => ({ role: m.role, content: m.content }));
       
-      // Add empty assistant message
-      setMessages(prev => [...prev, { ...assistantMessage, sources: relevantChunks }]);
-      setIsTyping(false);
-
       // Stream the response
       let accumulatedContent = '';
+      let isFirstChunk = true;
       const stream = getGroundedResponseStream(text, relevantChunks, history);
       
       for await (const chunk of stream) {
+        // On first chunk, add the message and hide loading
+        if (isFirstChunk) {
+          setMessages(prev => [...prev, { ...assistantMessage, sources: relevantChunks }]);
+          setIsTyping(false);
+          isFirstChunk = false;
+        }
+        
         accumulatedContent += chunk;
         setMessages(prev => 
           prev.map(m => 
@@ -89,13 +93,13 @@ I've indexed about **${extractedChunks.length} specific nodes** across the docum
       }
     } catch (err) {
       console.error(err);
-      setMessages(prev => 
-        prev.map(m => 
-          m.id === assistantMessageId
-            ? { ...m, content: "Network interruption or API quota reached. Please retry." }
-            : m
-        )
-      );
+      setIsTyping(false);
+      setMessages(prev => [...prev, {
+        id: assistantMessageId,
+        role: 'assistant',
+        content: "Network interruption or API quota reached. Please retry.",
+        timestamp: new Date()
+      }]);
     }
   };
 
