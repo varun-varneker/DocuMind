@@ -1,14 +1,14 @@
 
-import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 import { DocumentChunk } from "../types";
 
 const MODEL_NAME = 'gemini-3-flash-preview';
 
-export const getGroundedResponse = async (
+export const getGroundedResponseStream = async function* (
   query: string,
   contextChunks: DocumentChunk[],
   history: { role: 'user' | 'assistant', content: string }[]
-): Promise<string> => {
+): AsyncGenerator<string, void, unknown> {
   const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_API_KEY });
   
   const contextText = contextChunks
@@ -36,8 +36,11 @@ export const getGroundedResponse = async (
     - If the answer isn't in the document and isn't something industry knowledge can reasonably extrapolate from the document's facts, say you don't know.
   `;
 
+  // History Trimming: Only keep last 3 conversation turns (6 messages)
+  const recentHistory = history.slice(-6);
+
   const contents = [
-    ...history.map(h => ({ 
+    ...recentHistory.map(h => ({ 
       role: h.role === 'user' ? 'user' as const : 'model' as const, 
       parts: [{ text: h.content }] 
     })),
@@ -45,16 +48,21 @@ export const getGroundedResponse = async (
   ];
 
   try {
-    const response: GenerateContentResponse = await ai.models.generateContent({
+    const stream = await ai.models.generateContentStream({
       model: MODEL_NAME,
       contents,
       config: {
         systemInstruction,
-        temperature: 0.3, // Slightly higher for more natural flow
+        temperature: 0.3,
       },
     });
 
-    return response.text || "I'm having trouble synthesizing that right now. Could you rephrase the question?";
+    for await (const chunk of stream) {
+      const text = chunk.text;
+      if (text) {
+        yield text;
+      }
+    }
   } catch (error) {
     console.error("Gemini API Error:", error);
     throw new Error("Failed to get response from the Analyst.");
@@ -80,6 +88,7 @@ export const rankChunksForQuery = async (
     return { chunk, score };
   });
 
+  // Context Optimization: Return max 5 high-relevance chunks
   return scored
     .sort((a, b) => b.score - a.score)
     .slice(0, 5)

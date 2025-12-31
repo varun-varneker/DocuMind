@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { extractTextFromPdf } from './services/pdfService';
-import { rankChunksForQuery, getGroundedResponse } from './services/geminiService';
+import { rankChunksForQuery, getGroundedResponseStream } from './services/geminiService';
 import { ChatMessage, DocumentChunk, ProcessingState } from './types';
 import FileUpload from './components/FileUpload';
 import Chat from './components/Chat';
@@ -54,31 +54,48 @@ I've indexed about **${extractedChunks.length} specific nodes** across the docum
     setMessages(prev => [...prev, userMessage]);
     setIsTyping(true);
 
+    // Create a placeholder message for streaming
+    const assistantMessageId = (Date.now() + 1).toString();
+    const assistantMessage: ChatMessage = {
+      id: assistantMessageId,
+      role: 'assistant',
+      content: '',
+      timestamp: new Date()
+    };
+
     try {
       const relevantChunks = await rankChunksForQuery(text, chunks);
       const history = messages
         .filter(m => m.id !== 'system-1')
         .map(m => ({ role: m.role, content: m.content }));
-        
-      const response = await getGroundedResponse(text, relevantChunks, history);
+      
+      // Add empty assistant message
+      setMessages(prev => [...prev, { ...assistantMessage, sources: relevantChunks }]);
+      setIsTyping(false);
 
-      setMessages(prev => [...prev, {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: response,
-        sources: relevantChunks,
-        timestamp: new Date()
-      }]);
+      // Stream the response
+      let accumulatedContent = '';
+      const stream = getGroundedResponseStream(text, relevantChunks, history);
+      
+      for await (const chunk of stream) {
+        accumulatedContent += chunk;
+        setMessages(prev => 
+          prev.map(m => 
+            m.id === assistantMessageId 
+              ? { ...m, content: accumulatedContent }
+              : m
+          )
+        );
+      }
     } catch (err) {
       console.error(err);
-      setMessages(prev => [...prev, {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: "Network interruption or API quota reached. Please retry.",
-        timestamp: new Date()
-      }]);
-    } finally {
-      setIsTyping(false);
+      setMessages(prev => 
+        prev.map(m => 
+          m.id === assistantMessageId
+            ? { ...m, content: "Network interruption or API quota reached. Please retry." }
+            : m
+        )
+      );
     }
   };
 
